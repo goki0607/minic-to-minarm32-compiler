@@ -1,0 +1,20 @@
+// This method returns the nth Fibonacci number
+function int fibonacci(int n){
+    var int i1 = 1;
+    var int i2 = 1;
+
+    while(n > 2){
+      var int temp = i2;
+      i2 = i1 + i2;
+      i1 = i2;
+      n = n - 1;
+    }
+    return i2;
+}
+
+function int main(*int input) {
+  var int 10f;
+  10f = fibonacci(10);
+  return 0;
+
+}

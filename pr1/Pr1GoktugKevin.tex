@@ -1,0 +1,291 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{fancyvrb}
+\usepackage{makecell}
+
+\title{Project Milestone 1}
+\author{Kevin Ayuque (kja306), Goktug Saatcioglu (gs2417)}
+\date{February 2019}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This is the documentation for Milestone 1 of the Spring 2019 Compiler Construction course. After Prof. Rose announced that we can work in pairs we decided to work together and split the work as can be seen in Section 3. Other than this file we are submitting a hacs file called \texttt{Pr1GoktugKevin.hx} that has our working parser, the folder \texttt{/samples/} that has the test files given out with the assignment and the folder \texttt{/custom\_samples/} that has our own test cases. The choices made and issues resolved is outlined in Section 2. Our explanation of the test cases is available in Section 4. To compile the parse, navigate to the folder containing \texttt{Pr1GoktugKevin.hx} and run the following command:
+\begin{verbatim}
+    > $HOME/.hacs/bin/hacs Pr1GoktugKevin.hx
+\end{verbatim}
+To run a custom test case execute the following command:
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program custom_samples/FILE_NAME.EXT
+\end{verbatim}
+To run an assignment test case execute the following command:
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/FILE_NAME.EXT
+\end{verbatim}
+All commands should be executed in a terminal session. We are submitting the same code and same documentation for both of us where the log in Section 3 indicates what was done by whom.
+
+\section{Choices Made and Issues Resolved}
+We've had to resolve a few issues along with making some choices when completing the task required for Project Milestone 1. They are listed below.
+\begin{enumerate}
+    \item Starting with \textbf{1.1 Definition} (tokens) we see that the requirements for \textit{Identifier} tokens is a little vague. It reads as follows: ``\textit{Identifier} tokens start with a letter, \$, or \_, followed by more of the same as well as digits \dots''. We took this to mean that an \textit{Identifier} can start with a \textit{ValidStart} and then continue with more characters from either \textit{ValidStart} or \textit{Digit}. As a regular expression, we get
+    \[
+        \textit{Identifier}=[a-zA-Z\$\_]([a-zA-Z\$\_0-9])^{*}
+    \]
+    This is consistent with the way identifiers in C works.
+    \item In \textbf{1.1 Definition} (tokens) the requirements for \textit{Identifier} tokens continues with ``\dots except that keywords (literal tokens used by the grammar) are not permitted).'' This issue is resolved by making sure every token of the language is defined according to the assignment paper so no special treatment is necessary.
+    \item Again, in definition \textbf{1.1 Definition} (tokens) comments are either of the form \texttt{//} or \texttt{/*}\dots\texttt{*/} where the former is a single line comment and the latter is a multi-line comment. For multi-line comments it is not stated whether comment nesting is allowed (i.e. \texttt{/*comment /*comment inner*/ outer*/}). In C nesting of comments is not permitted and we decided to also not permit nesting of comments. The idea was to follow C as closely as possible and also make the work easier for our parser as allowing nesting of multi-line comments would then have to have us use a context-free grammar instead of a regular expression. (The reason why a regular expression does not work for nested comments is because regular expressions cannot count. For example, the language of balanced parenthesis is not regular.) As a final remark, this is obviously not an issue for single line comments as they only need to begin with \texttt{//} and end with the newline character.
+    \item We move onto \textbf{1.2 Definition} (expressions) where the order of precedence of certain operations are given. We noticed that there were $9$ total levels (lines) of expressions so we chose to use $@9$ for the highest level of precedence and $@1$ for the lowest level of precedence. Furthermore, we incorporate left-associative and right-associative operators by following the HACS guide.
+    \item There is a issue with \textbf{1.2 Definition} (expressions) and it has to do with unary operators. In C operations such as \texttt{-+5} and \texttt{**a} are allowed. The first should evaluate to $-5$ while the second describes a pointer to a pointer. Since C allows such expressions and it is reasonable to allow them in MiniC too, we decided to make the unary operators right recursive.
+    \item In \textbf{1.2 Definition} (expressions) there is a slight issue regarding how to have a grammar for expression lists. The easy and standard solution to resolve this is to create a grammar that at first either generates empty or a single expression followed by another grammar that either prepends commas or generates empty. This way we can correctly cover all cases for a list of expressions. Our approach also generalizes well to type lists and statement lists as we can simply use the same grammar with different sorts. Thus, we implement this approach multiple times throughout the parser.
+    \item Similarly to \textbf{1.2 Definition} (expressions), for \textbf{1.3 Definition} (types) we have $3$ total levels (lines) of expressions so we chose to use $@3$ for the highest level of precedence and $@1$ for the lowers level of precedence. Furthermore, parameter type lists are resolved using a similar grammar to that of expression type lists where we again first generate a single parameter and then generate more separated by a leading comma if necessary.
+    \item The first issue relating to \textbf{1.4 Definition} (statements) is that the left side of an assignment must be an l-value. So the left side of the assignment can either be an \textit{Identifier} or a pointer dereference \textit{*Expression}. We decided at first to create a new sort called \textit{Lval} that is either an \textit{Identifier} or a \textit{*Expression}. This means that we the requirement to have only l-values at the left side of an assignment is in a way hard-coded into the parser. This approach, however, was wrong since now the parser would accept statements such as
+    \begin{verbatim}
+        *(2+2) = atoi(in);
+    \end{verbatim}
+    which is clearly problematic. So instead we defined \textit{Lval} as either an \textit{Identifier} or a \textit{* Deref} where \textit{* Deref} is equal to either \textit{Identifier} or \textit{* Deref} meaning we can deference multi-directional pointers. This approach works because in C an l-value is either an identifier or a pointer dereference where the pointer dereference is of the form of some amount dereference symbols followed by another identifier. While this may not be the best approach as checking for this during the semantic analyzer is also a possibility, we decided this approach was best in our case in order to pass the test cases and meet the project specifications. As a final note, we did not recursively reference back to an l-value as it might be useful for the future to separate the nodes of l-values in the parse tree which are just identifiers from those that are pointer dereferences.
+    \item The second issue relating to \textbf{1.4 Definition} (statements) is that the grammar given in its current form would lead to the dangling else problem. We decided to resolve using the standard technique of having a new production that eagerly consumes an else when if-then-else statements are generated. The solution was pretty standard but it was important to notice that this was an issue.
+    \item Statement lists in \textbf{1.4 Definition} (statements) were resolved in the same manner that expressions lists and type lists were resolved.
+    \item For \textbf{1.5 Definition} (declaration) there was again the issue of parameter lists which could be easily be solved using the same approach as for expressions lists, type lists and statement lists. Another issue is that of the \texttt{main} function which we discuss in the following point.
+    \item We see that for \textbf{1.6 Definition} (program) we must have a \textit{main} function. This was the most challenging part of the assignment as we couldn't initially figure out how to achieve. Some ideas included creating a new token called \textit{Main} and having it match \textit{main}. This did not work too well because all names that matches to \textit{Main} are also going to match to \textit{Identifier} which confused HACS. Our next approach was to create a new declaration called \texttt{MainDecl} and instead of using \textit{Type} and \textit{Identifier} we would just write out \textit{function int main} and follow it up with an optional parameter list. This also did not work since all the tokens were already parsed to either \textit{Type} or \textit{Identifier} making the sort useless and HACS giving a ``unreachable statement'' error which lead to the program not compiling. Finally, we realized that the order in which the tokens are declared is actually significant for HACS. This means that if a program string has two tokens it matches to, then the very first token declared in the parser source file will be used. Thus, we decided to create a top-level token called \textit{Main} which only matches to \textit{function int main} and then we created a new sort called \textit{MainDecl} that matches to this token. This way we can get the parser to detect whether a \texttt{main} function was declared. Furthermore, this also means that we make the following rule on the program: there must exist a \texttt{main} function and the \texttt{main} function must return an int but it can take any amount of optional parameters. This is the best and most simple solution we came up with. Finally, we defined the program to be a set of optional declarations followed by a \texttt{main} declaration followed by another set of optional declarations meaning the parser can enforce whether there is a main function or not. This analysis could have also been left to the semantic analyzer but we chose to hard-code it in in order to pass the test cases. If at a later point we find out that main must take zero arguments then we can easily modify the parser to get the correct behavior but for now allowing optional parameters seems like a good idea as this is also allowed for C like \texttt{main} functions (as long as the program is started correctly, i.e. \textit{int main(int argc, char *argv[])} is a valid C main function and needs to be called with command line arguments).
+\end{enumerate}
+
+\newpage
+\section{Work log}
+
+\begin{center}
+\begin{tabular}{ |l|l|l| } 
+ \hline
+ Date & Details & Description \\ 
+ \hline
+ February 11 & \makecell{Kevin Ayuque \\ Goktug Saatcioglu} & \makecell{Team formation.} \\\hline
+ February 12 & \makecell{Kevin will work on tokens and types. \\ Goktug will work expressions and statements. \\ Agreed to use GitHub and Slack. \\ Agreed to a common naming scheme. \\ Will resolve issues as they come up \\ Meet up Friday} & \makecell{First goals set. \\ Work divided up.} \\\hline
+ February 15 & \makecell{Realized certain issues. \\ First issue if of main. \\ Another issue is of l-values. \\ Another issue is of dangling else. \\ Worked together to fix the issues. \\ Got all test cases to pass. \\ Pushed final version to Git. \\ Divided work for the writeup. \\ Goktug will write Section 2. \\ Kevin will write Section 4. \\ Kevin will add custom tests.} & \makecell{Second meeting. \\ Finished parser. \\ Divided up work.} \\\hline
+ February 20, 21 & \makecell{Certain bugs were resolved. \\ Documentation finished} & \makecell{Testing and Documentation.} \\ \hline
+ February 22 & \makecell{Finished documentation. \\ Discussed implementation one last time. \\ Wrote Introduction (Section 1).} & \makecell{Final meeting for part 1.}\\\hline
+\end{tabular}
+\end{center}
+
+\section{Testing}
+\subsection{Sample tests}
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/comments.badMC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+/* This comment
+   /* Has a nested one */
+*/
+
+function int main() {
+  return 0;
+}
+\end{Verbatim}
+
+The above does not compile because comments do not nest. The only comments ignored are from line 1 to line 2. On line 3 the compiler is expecting a sequence of declarations or a comment to ignore, but \verb|*/| does not match any of the criteria.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/comments.MC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// Some comments.
+
+/*****
+  Wrapper comment
+  // single line comment
+*****/
+
+// Single with /* wrapped */
+
+function int main() { return 0; }
+\end{Verbatim}
+
+The above does compile. There is a comment on line 1, a multi-line comment from line 2 to 6 and a comment on line 8 that are ignored, followed by the \verb|main| declaration.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/doubleelse.badMC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+function int main(*char in) {
+  if (1==2) {} else {} else {}
+  return 0;
+}
+\end{Verbatim}
+
+The above does not compile because there is an additional \verb|else| on line 2 and \verb|else| is not at the beginning of any statement.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/nomain.badMC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+function int f(*char in) {
+  return 0;
+}
+\end{Verbatim}
+
+The above does not compile because the program expects a sequence of declarations with at least one \verb|main| function, which is not the case here.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/nonlvalue.badMC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+function int main(*char in) {
+  2+2 = atoi(in);
+  return 0;
+}
+\end{Verbatim}
+
+The above does not compile because on variable assignment we limit the left expression to be an identifier or a pointer dereference. Therefore \verb|2+2| on the left side of the expression is not allowed.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/strcpy.MC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// Copy a string in Mini-*-C-*-.
+function *char strcpy(*char string) {
+  var int length;
+  length = strlen(string);
+  var *char copy;
+  copy = malloc(length+1);
+  var *char p;
+  p = copy;
+  while (*string) {
+    *p = *string;
+    string = string + 1;
+    p = copy + 1;
+  }
+  *p = 0;
+  return copy;
+}
+
+function int main(*char input) {
+  var int dummy;
+  dummy = puts("The copy of the string is ");
+  dummy = puts(strcpy(input));
+  return 0;
+}
+\end{Verbatim}
+
+The above does compile. There is a comment on line 1 that is ignored, followed by a sequence of declarations that includes the \verb|main| function.
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/strings.MC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// Strings in Mini-*-C-*-.
+function int main() {
+  var int dummy;
+  dummy = puts("This string has a \" and \n and \
+then it continues with \x68ex and \t\ttabs");
+  return 0;
+}
+\end{Verbatim}
+
+The above does compile. There is a comment on line 1 that is ignored, followed by the \verb|main| declaration that includes 3 valid statements. 
+
+\begin{verbatim}
+> ./Pr1GoktugKevin.run --sort=Program samples/strlen.MC
+\end{verbatim}
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// Compute string length in Mini-*-C-*-.
+function int strlen(*char string) {
+  var int length;
+  length = 0;
+  while (*string) {
+    length = length + 1;
+    string = string + 1;
+  }
+  return length;
+}
+
+function int main(*char input) {
+  var int dummy;
+  dummy = puts("The length of the string is ");
+  dummy = puti(strlen(input));
+  return 0;
+}
+\end{Verbatim}
+
+The above does compile. There is a comment on lin 1 that is ignored, followed by a sequence of declarations that includes the \verb|main| function.
+
+\subsection{Additional tests}
+
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// This method returns the nth Fibonacci number
+function int fibonacci(int input){
+    var int i1;
+    var int i2;
+    
+    i1 = 1;
+    i2 = 1;
+
+    while(input > 2){
+      var int temp;
+      temp = i2;
+      i2 = i1 + i2;
+      i1 = i2;
+      input = input - 1;
+    }
+    return i2;
+}
+
+function int main(*int input) {
+  var int tenth;
+  tenth = fibonacci(10);
+  return 0;
+
+}
+\end{Verbatim}
+
+The above does compile. There is a comment on line 1 that is ignored, followed by a sequence of declarations that includes the \verb|main| function. The \verb|fibonacci| and \verb|main| functions both contain valid statements.
+
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// This method returns the nth Fibonacci number
+function int fibonacci(int n){
+    var int i1 = 1;
+    var int i2 = 1;
+
+    while(n > 2){
+      var int temp = i2;
+      i2 = i1 + i2;
+      i1 = i2;
+      n = n - 1;
+    }
+    return i2;
+}
+
+function int main(*int input) {
+  var int 10f;
+  10f = fibonacci(10);
+  return 0;
+
+}
+\end{Verbatim}
+
+The above does not compile. Unlike the previous example, on line 3,4 and 7, our compiler does not allow variable declaration and variable assignment on a single statement.
+
+\begin{Verbatim}[numbers=left,xleftmargin=5mm]
+// This is a very inefficient implementation of pow
+function int pow(int base, int exponent){
+    if (exponent == 0){
+        return 1;
+    }
+    var int res;
+    res = base;
+    while(exponent > 1){
+      res = res * base;
+      exponent = exponent - 1;
+    }
+    return res;
+}
+
+function int main(*int input) {
+  var int res;
+  res = pow(10, 2);
+  return 0;
+}
+\end{Verbatim}
+The above does compile. There is a comment on line 1 that is ignored, followed by a sequence of declarations that includes the \verb|main| function. The \verb|pow| and \verb|main| functions both contain valid statements.
+
+\end{document}

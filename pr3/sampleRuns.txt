@@ -1,0 +1,4 @@
+./Pr3GoktugKevin.run --scheme=Compile --term="function int foo(int x) { var int x; x = foo(x); }"
+./Pr3GoktugKevin.run --scheme=Compile --term="function int foo(int x) { var int x; x = 0; while (f(x) < 10) { x = x + 1; } return x; }
+./Pr3GoktugKevin.run --scheme=Compile --term="function int foo(int x) { var int x; x = 0; while (x < 10) { x = x + 1; } return x; }
+./Pr3GoktugKevin.run --scheme=Compile --term="function int foo(int x) { var int x; var int y; var int z; x = poo(x,y,z); }"

@@ -1,0 +1,328 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{fancyvrb}
+\usepackage{makecell}
+\usepackage{longtable}
+\usepackage[margin=.875in]{geometry}
+
+\title{Project Milestone 2}
+\author{Kevin Ayuque (kja306), Goktug Saatcioglu (gs2417)}
+\date{April 2019}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This is the documentation for Milestone 2 of the Spring 2019 Compiler Construction course. We had worked together on Milestone 1 and continue working together for Milestone 2. The choices made and issues resolved is outlined in Section 2. Our explanation of functions we defined for the SDD is given in Section 3. Section 4 has our work log which shows who worked on what part of the project. Finally, Section 5 is the actual SDD table for all the rules in the grammar given in the assignment specification. We also assume very basic knowledge of functional programming syntax (i.e. OCaml or SML) throughout the document along with implementation of some assumed functions in OCaml.
+
+\section{Choices Made and Issues Resolved}
+
+\subsection{Attributes Used}
+Throughout the SDD we use the following attributes:
+\begin{itemize}
+    \item \textit{env} - This attribute refers to the referencing current environment of a non-terminal symbol in the grammar, i.e. \textit{env} is the symbol table up to and including this non-terminal symbol.
+    \item \textit{fun} - This attribute is only for function declarations and stores the tuple (type, name, argument list). This information is used such that the top level environment for the  rule starting with symbol \texttt{P} can be updated properly.
+    \item \textit{rets} - This attribute holds what type a given statement list should return. It is determined when a function is declared, i.e. the declaration production of the grammar, and then passed onto each statement after the declaration such that if we ever encounter return statement we can check whether there is a type mismatch or not.
+    \item \textit{retr} - This attribute determines whether a given rule derivation eventually has a \texttt{return} statement inside it. The reason this is necessary is because we need to make sure that every function actually returns something. So, once we check all the statements we can report an error at the function declaration level if a return statement is missing.
+    \item \textit{type} - This attribute holds the typing information for an expression. It is updated and checked for as the assignment sheet specifies such that we get correct type checking behavior.
+    \item \textit{isLVal} - This synthesized attribute is only for assignments to make sure we only make assignment to l-values which are either \textbf{id}'s or *\textbf{id}'s (i.e. pointer dereferences of identifiers). If an expression production derives an l-value immediately the attribute is is true and otherwise it is false. Naturally, it is only attached to expressions.
+\end{itemize}
+
+\subsection{Dependency/Information Flow}
+The type checker works structurally on the program, i.e. it uses the grammar to evaluate smaller sub-expressions and obtain type information for bigger expressions. For expressions we have the inherited attribute \textit{type} that refers to the type of the expression and uses the typing information of the sub-expressions to determine the type of larger expressions. While determining the types the semantic rules also check for any errors and report them if seen by using type-checking functions defined in the Functions Defined section. To properly type check we also use the synthesized attribute \textit{env} that passes the relevant environment down to sub-expressions. This is necessary so that all expressions have access to a symbol table with the correct referencing environment for that expression. We mainly use \textit{env} in expression grammar productions to check if names being used have been declared and if functions are being properly called, i.e. whether there are type-mistmatches between the actuals and the formals of a function for a function call. For statements the attribute \textit{env} works similarly but this time it is inherited. This is necessary because symbol table information must be passed onto expressions inside statements and the symbol table must be updated if a new variable is declared. We also check whether a variable has already been declared and give an error if so. There is also another inherited attribute called \textit{rets} that passes information of what type the function that encloses these statement has to return. If we ever encounter a \texttt{return} statement then we can check whether we are returning the proper type. We also use the synthesized attribute \textit{retr} to make sure a list of statements eventually returns something. This is necessary as with the current grammar we can actually write programs with functions that declare a return type but they never actually return anything. So as we build the grammar, we can make sure that a return statement is included somewhere. For function declarations we again have \textit{rets} and \textit{env} which passes on to the statements underneath the function declaration what must be returned and what variables have been declared in the function argument. It also has \textit{retr} and we check at this level whether we have actually returned something. Furthermore, there is the synthesized attribute \textit{fun} that basically allows the program environment to obtain information about all of the declarations. Also, the program grammar rule also has an environment \texttt{env} which we use to update the global symbol table and pass it onto the function declarations. This global environment assumes that \texttt{GlobalPreDefs} is already given as specified in the assignment sheet and updates it using Di.\textit{fun} for all Di such that we get a symbol table of function declarations. Then we check this table for if a main function has been declared and if it has been then whether it has been properly declared as per the assignment specification. The descriptions of functions related to the environment/symbol-table checking and program checking can be found in the Functions Defined section. Finally, we have one last synthesized attribute called \textit{isLVal} which is true if an expression production immediately derives a l-value and otherwise false. This is so that we make assignments only to identifiers and the existence of the identifier is checked on the expression level. Overall, our implementation is pretty straightforward but also has some assumptions which we discuss next.
+
+\subsection{Assumptions and Choices}
+We had to make a few simplifying assumptions and these are as follows:
+\begin{itemize}
+    \item Scoping: We assume that the scope of a top-level variable extends to all statements and nested statements below it. That is if we have statements of the form \texttt{\{ int x; ... \{ ... \{ ... \} ... \} ... \}} then the variable \texttt{x} is valid for all nested statement lists and cannot be re-declared. We did this because it is a simple implementation and the assignment specification gives no rules on scoping meaning we were free to choose what to do. Better scoping rules can possibly be implemented with the SDD and the Dragon Book has a good discussion on this. Overall, our implementation gives us static scoping where the lifetime of a variable is from the point it is declared inside a function declaration until the function ends. Note that function arguments also follow this rule and thus we cannot declare a variable with the same name as a function argument. Furthermore, statement lists that introduce a new block do have a local scope so they cannot hide top-level declarations. Finally, the symbol table is easy to implement and we assume that we create copies of existing tables whenever we make an assignment in the semantic rules. This way if there is hiding of the scope of a variable we can recover the hidden variable once the hiding ends. A simple hash map should work well in this situation. However, the copying of tables is very inefficient and something we can improve upon.
+    \item Function names: The only time our scoping rules change is for function declarations. We see that all functions are aware of other functions meaning the order of function declarations does not matter. However, we require unique function names and these are checked in the order they are declared. This could be considered a quirk of our language but it is actually consistent with the way we define scoping and the way we would like functions to be called, i.e. inside any function we should be able to call any other function. Note that our rules for function names means that direct method overloading or overriding are not allowed but such object-oriented programming features can be implemented by emulating dynamic dispatch (which is also how OOP in standard C would be implemented).
+    \item Function return types: The functions must return either a type int or *char and can never return a type void. This is because we have no global variables in our programs meaning it is pointless to call a function for its side effects as it is not possible to affect a global state due to lack of global variables. Thus, we impose this restriction to make our type checking of whether a function actually returns something easier. The checks for whether a function body actually returns something is discussed next.
+    \item Checks for whether a function body actually returns something: This is a peculiar issue since the grammar allows us to actually build functions that have no return statements however, as discussed above, we actually require that functions return something. To resolve this issue we use the synthesized attribute \textit{retr} which naturally ends up restricting the number of valid programs to those that are guaranteed to return something. If we see a if-body rule followed by more statements we require that the more statements return something. If we see a if-body-else-body rule followed by more statements we either require both if-body and else-body to return something or the more statements to return something. If we see a while-body followed by more statements we require that the more statements return something. Finally, for statement lists we require that either the nested list or the rest return something and this may seem counter-intuitive but the idea is simple. At the top-level without any conditionals we can have an arbitrary amount of nesting before we get a return and this will still be good. If we have conditionals then our conditional rules will make sure the program is good. For every other production we simply propagate the information back up the tree such that at the function declaration level we can then do one last check and return an error if we have a bad program. This checking has the additional benefit that we are guaranteed that statements such as \texttt{int x; x = foo(5,6);} actually assign an \texttt{int} to variable \texttt{x} because they have passed the type checker. In a way, this implementation of MiniC resembles functional languages as there is no state on the global level but we also have imperative features as we have state on the local level.
+    \item Global variables: As the grammar has no way to introduce global variable declarations we safely assume that there are no global variables declared throughout our SDD implementation. This is not  a major issue but nonetheless merits mentioning.
+    \item \texttt{GlobalPreDefs}: We assume that \texttt{GlobalPreDefs} is the global predefined functions as given in the assignment sheet and are in such a format that we can create an initial environment for the program. That is, \texttt{GlobalPreDefs} is in a format such that a symbol table can be easily created from it. This is not too big of an assumption but must be noted. Alternatively, we could have just assumed some sort of pre-processor appends all pre-defined functions to any created program before beginning the lexing phase so our analysis would work without initializing with some \texttt{GlobalPreDefs}. That is we could simply run the type checker and collect this information as analyze the program. We take the former approach of assuming the \texttt{GlobalPreDefs} variable but the other approach works too.
+    \item Expression assignments at the statement level: We also noticed that the grammar itself does not prevent assignment such as \texttt{1 + 2 + 3 = 4 + 5 + 6;} or \texttt{1 < 2 = 2 < 1;}. Of course such assignments are nonsensical so we must make sure that in an assignment statement the left-side should be an l-value. So we must check whether the left side of an assignment expression is either an identifier or a pointer dereference symbol immediately followed by an identifier. This is where the \textit{isLVal} synthesized attribute comes into play and is declared false for all other expression productions other than the two cases described above. So if the expression gives us an identifier this attribute becomes true and if it the expressions gives us a pointer dereference then it is true as long as the expression following the dereference symbol gives us an identifier. This attribute allows us to resolve the non-valid assignment issues and we can check at the statement level whether the assignment is valid by accessing the \textit{isLVal} attribute of the left side of the assignment. Furthermore, we check whether an identifier has been declared at the expression level allowing us to ensure that an assignment is made to a l-value and the variable being assigned to has been declared.
+    \item Assumed behavior: We check for an error before we do any updating to the attributes. This is necessary as we wish the error to be checked before running some function that assumes no errors will occur. Otherwise, we will obtain erroneous behavior. While this assumption is implicit we chose to explicitly state it here. Furthermore, we assume that if there is an error then the error function correctly handles this as to either continue analyzing the program or reporting an error with a location arrow. The assignment specification does not specify how to handle errors or what happens to the analysis in the case of an error so we leave this as open-ended issue. A user, in theory, can provide implementations of these error functions so as to achieve their desired behavior.
+    \item Assumed functions: We assume a variety of easily implementable functions along with an implementation of a symbol-table that works nicely with our assumed functions. This assumption is further discussed in the Functions Defined section. As a final note, we push the checking of whether a proper main has been declared into our assumed functions which greatly simplifies this task.
+\end{itemize}
+
+\subsection{Issues Resolved}
+The preceding sections describe all the issues we encountered and how we resolved them such as by making assumptions or making choices.
+
+\section{Functions Defined}
+\subsection{Type-checking functions}
+The functions below can be implemented using simple pattern matching on ADTs or other programming constructs. The implementation is easy and up to the user so we abstract away the concrete implementation but describe what each function should do.
+\begin{itemize}
+    \item \verb|isEqual(type, type)|
+    \begin{sloppypar}
+    Returns \verb|true| if both types are equal. Otherwise it returns \verb|false|.
+    \end{sloppypar}
+    \item \verb|isInt(type)|
+    \begin{sloppypar}
+    Returns \verb|true| if \verb|type| is an \verb|int|. Otherwise it returns \verb|false|.
+    \end{sloppypar}
+    \item \verb|isPointer(type)|
+    \begin{sloppypar}
+    Returns \verb|true| if \verb|type| is a pointer. Otherwise it returns \verb|false|.
+    \end{sloppypar}
+    \item \verb|isIntOrPointer(type)|
+    \begin{sloppypar}
+    Returns \verb|true| if \verb|type| is an \verb|int| or a pointer. Otherwise it returns \verb|false|.
+    \end{sloppypar}
+    \item \verb|toString(type)|
+    \begin{sloppypar}
+    Transforms the \verb|type| to a \verb|string| — i.e., type \texttt{int} becomes ``int''.
+    \end{sloppypar}
+\end{itemize}
+
+
+\subsection{Environment functions}
+Here we assume that the environment is a symbol table. Furthermore, we assume that symbol table look ups and additions can be easily done and are already given with the symbol table implementation. Again, we abstract away the implementation but stick to our functional programming mindset such that the symbol table is never mutated but a new updated copy is returned. This is inefficient but has the benefit of being side-effect free so we know that some function call elsewhere in our SDD won't inadvertedly change some other state of the table.
+\begin{itemize}
+\item \verb|existsEnv(env,name)|
+\begin{sloppypar}
+Performs a lookup on the \verb|env| symbol table and returns \verb|true| if a  \verb|name| symbol exists. Otherwise it returns \verb|false|.
+\end{sloppypar}
+\item \verb|extendEnv(env,type,name)|
+\begin{sloppypar}
+Creates and returns a new environment where \verb|new_env = env + {(type, name)}|. We can pass \verb|env = {}| if we have no prior environment. However, it is not possible to create a blank environment, i.e. the empty symbol table.
+\end{sloppypar}
+\item \verb|makeEnv(fun_decls)|
+\begin{sloppypar}
+Creates and returns a new environment using function declarations, we commonly initialize this with the \verb|GlobalPreDefs| which is specified in the specifications sheet. We can make a blank environment here by passing \verb|env = {}| here.
+\end{sloppypar}
+\item \verb|getFunType(env,name)|
+\begin{sloppypar}
+Performs a lookup on the \verb|env| symbol table and returns the type of the function that matches \verb|name|.
+\end{sloppypar}
+\item \verb|checkArgTypes(env,name,(actuals list))|
+\begin{sloppypar}
+Takes an environment \verb|env| and the \verb|name| of the function being called and returns \verb|true| if the actual types matches the formal types of the function being called. Otherwise it returns \verb|false|.
+\end{sloppypar}
+\item \verb|getVarType(env,name)|
+\begin{sloppypar}
+Returns the type of a variable \verb|name| by performing a lookup on the \verb|env| Symbol table. If the name does not exist in the symbol table it will return \texttt{None}, i.e. we use the functional programming \texttt{Option} type to indicate it either returns something or returns nothing.
+\end{sloppypar}
+\end{itemize}
+
+\subsection{Program functions}
+Again the implementation are abstracted but these functions are easy to implement. Given an environment (i.e. symbol table) we can iterate over it to check for certain properties such as has a main function been declared. If we find the property we return true and otherwise we return false.
+\begin{itemize}
+\item \verb|existsMain(env)|
+\begin{sloppypar}
+Takes an environment \verb|env| and returns \verb|true| if a \verb|main| function has been declared on the respective environment. Otherwise it returns \verb|false|.
+\end{sloppypar}
+\item \verb|checkMainRetType(env)|
+\begin{sloppypar}
+Takes an environment \verb|env| and returns \verb|true| if the \verb|main| function return type is \verb|int|. Otherwise it returns \verb|false|. If \verb|main| does not exist it also returns \verb|false|.
+\end{sloppypar}
+\item \verb|checkMainArgs(env)|
+\begin{sloppypar}
+Takes an environment \verb|env| and returns \verb|true| if the \verb|main| function arguments are all of type \verb|*char|. Otherwise it returns \verb|false|. If \verb|main| does not exist it also returns \verb|false|.
+\end{sloppypar}
+\end{itemize}
+
+\section{Work log}
+
+\begin{center}
+\begin{tabular} { |c|c|c| } 
+ \hline
+ Date & Details & Description \\ 
+ \hline
+ March 15 & 
+ \makecell{Met up to discuss the assignment specification. \\ Agreed on the attributes \textit{env}, \textit{rets}, \textit{type}. \\ Agreed to think and meet up next week.} & 
+ \makecell{Expression \\ Types} \\\hline
+ March 22 & 
+ \makecell{Kevin will work on expressions. \\ Goktug will work on statements. \\ Agreed to use Overleaf and continue using Slack. \\ Will resolve issues as they come up \\ Meet up Friday April 5} & 
+ \makecell{Program \\ Declaration \\ Statements \\ Expressions} \\\hline
+April 5 & \makecell{Met up to discuss our implementations. \\ Considered function declarations and environments. \\ Discussed issue of returns. \\ Agreed to use the attributes \textit{retr} and \textit{fun}. \\ Goktug will finish the SDD with our agreements. \\ Kevin will start working on the document. \\ Goktug will finish editing the SDD. } & \makecell{Further discussion \\ Issue of return \\ Typing up the document} \\\hline
+April 12 & \makecell{Went over the document. \\ Finished the write-up. \\ Proof-read together. \\ We will proof-read one more time before submitting.} & \makecell{Finishing touches}\\\hline
+April 15 & \makecell{Realized the issue with expressions (l-values). \\ Decided to add the attribute \textit{isLVal}. \\ Proof-read one last time.} & \makecell{Just before submitting}\\\hline
+\end{tabular}
+\end{center}
+
+\section{SDD}
+
+\begin{center}
+\begin{longtable}{ |l|l| }
+    %\caption{A sample long table.} \label{tab:long} \\
+    
+    \hline
+    \multicolumn{1}{|c|}{\textbf{Production}} & \multicolumn{1}{c|}{\textbf{Semantic Rules}} \\
+    \hline 
+    \endfirsthead
+    
+    \multicolumn{2}{c}%
+    {{\bfseries continued from previous page}} \\
+    \hline
+    \multicolumn{1}{|c|}{\textbf{Production}} & \multicolumn{1}{c|}{\textbf{Semantic Rules}} \\
+    \hline
+    \endhead
+    
+    \hline
+    \multicolumn{2}{|r|}{{continued on next page}} \\
+    \hline
+    \endfoot
+    
+    \hline \hline
+    \endlastfoot
+    
+     & \\
+    
+    P $\rightarrow$ D1 ... Dn & \makecell[l]{ P.\textit{env} = makeEnv(GlobalPreDefs) \\ P.\textit{env} = extendEnv(P.\textit{env}, D1.\textit{fun}) \\ $\vdots$ \\ P.\textit{env} = extendEnv(P.\textit{env}, Dn.\textit{fun}) \\ D1.\textit{env} = P.\textit{env} \\ $\vdots$ \\ Dn.\textit{env} = P.\textit{env} \\ \textbf{if} $\neg$existsMain(P.\textit{env}) \\ \textbf{then} ``error: no main function declared'' \\ \textbf{if} $\neg$checkMainRetType(P.\textit{env}) \\ \textbf{then} ``error: main function must return an int'' \\ \textbf{if} $\neg$checkMainArgs(P.\textit{env}) \\ \textbf{then} ``error: main function can only have \\ parameters of type *char''} \\
+    
+     & \\
+    
+    \hline
+    
+     & \\
+    
+    D $\rightarrow$ function T \textbf{id}( T1 \textbf{id}1, ..., Tn \textbf{id}n ) { Ss } & \makecell[l]{D.\textit{fun} = (T, \textbf{id}, ((T1, \textbf{id}1), ..., (Tn, \textbf{id}n)) \\ Ss.\textit{env} = \\ $\quad$ extendEnv(D.\textit{env}, T, \textbf{id}, \textbf{fun}(T1 \textbf{id}1, ..., Tn \textbf{id}n)) \\ Ss.\textit{env} = extendEnv(Ss.\textit{env}, T1, \textbf{id}1) \\ $\vdots$ \\ Ss.\textit{env} = extendEnv(Ss.\textit{env}, Tn, \textbf{id}n) \\ Ss.\textit{rets} = T \\ \textbf{if} existsEnv(D.\textit{env}, \textbf{id}) \\ \textbf{then} ``error: cannot redeclare function'' \\ \textbf{if} $\neg$Ss.\textit{retr} \\ \textbf{then} ``error: function is not gauranteed to return a value''} \\
+    
+     & \\
+    
+    \hline
+    
+     & \\
+    
+    Ss $\rightarrow$ var T1 \textbf{id}2 ; Ss3 & \makecell[l]{Ss3.\textit{env} = extendEnv(Ss.\textit{env}, T1, \textbf{id}2)  \\ Ss3.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = Ss3.\textit{retr} \\ \textbf{if} existsEnv(Ss.\textit{env}, \textbf{id}2) \\ \textbf{then} ``error: cannot re-declare variable''} \\ 
+    
+     & \\
+     
+    Ss $\rightarrow$ E1 = E2 ; Ss3 & \makecell[l]{E1.\textit{env} = Ss.\textit{env} \\ E2.\textit{env} = Ss.\textit{env} \\ Ss3.\textit{env} = Ss.\textit{env} \\ Ss3.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = Ss3.\textit{retr} \\ \textbf{if} $\neg$isEqual(E1.\textit{type}, E2.\textit{type}) \\ \textbf{then} ``error: can only assign the same type'' \\ \textbf{if} $\neg$E1.\textit{isLVal} \\ \textbf{then} ``error: can only assign to a l-value''} \\
+    
+     & \\
+     
+    Ss $\rightarrow$ if (E1) Ss2 ; Ss3 & \makecell[l]{E1.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{env} = Ss.\textit{env} \\ Ss3.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{rets} = Ss.\textit{rets} \\ Ss3.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = Ss3.\textit{retr} \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for if \\ condition''} \\
+    
+     & \\
+     
+    Ss $\rightarrow$ if (E1) Ss2 else Ss3 ; Ss4 & \makecell[l]{E1.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{env} = Ss.\textit{env} \\ Ss3.\textit{env} = Ss.\textit{env} \\ Ss4.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{rets} = Ss.\textit{rets} \\ Ss3.\textit{rets} = Ss.\textit{rets} \\ Ss4.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = (Ss2.\textit{retr} $\land$ Ss3.\textit{retr}) $\lor$ Ss4.\textit{retr} \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for if \\ condition''} \\
+    
+     & \\
+     
+    Ss $\rightarrow$ while (E1) Ss2 ; Ss3 & \makecell[l]{E1.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{env} = Ss.\textit{env} \\ Ss3.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{rets} = Ss.\textit{rets} \\ Ss3.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = Ss3.\textit{retr} \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for \\ while condition''} \\
+    
+     & \\
+     
+    Ss $\rightarrow$ return E1 ; Ss2 & \makecell[l]{E1.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = true \\ \textbf{if} $\neg$isEqual(E1.\textit{type}, Ss.\textit{rets}) \\ \textbf{then} ``error: wrong return type, must return type'' \^{} \\ toString(Ss.\textit{type})} \\
+     
+     & \\
+     
+    Ss $\rightarrow$ \{ Ss1 \} Ss2 & \makecell[l]{Ss1.\textit{env} = Ss.\textit{env} \\ Ss2.\textit{env} = Ss.\textit{env} \\ Ss1.\textit{rets} = Ss.\textit{rets} \\ Ss2.\textit{rets} = Ss.\textit{rets} \\ Ss.\textit{retr} = Ss1.\textit{retr} $\lor$ Ss2.\textit{retr}} \\
+     
+     & \\
+     
+    Ss $\rightarrow$ $\epsilon$ & \\
+     
+     & \\
+    
+    \hline
+    
+    & \\
+
+    E $\rightarrow$ \textbf{id}1 & \makecell[l]{E.\textit{type} = getVarType(E.\textit{env}, \textbf{id}1) \\ E.\textit{isLVal} = true \\ \textbf{if} $\neg$existsEnv(E.\textit{env}, \textbf{id}1) \\ \textbf{then} ``error: variable has not been declared''} \\
+    
+     & \\
+    
+    E $\rightarrow$ \textbf{str}1 & \makecell[l]{E.\textit{type} = *char \\ E.\textit{isLVal} = false} \\
+    
+     & \\
+    
+    E $\rightarrow$ \textbf{int}1 & \makecell[l]{E.\textit{type} = int \\ E.\textit{isLVal} = false} \\
+    
+     & \\
+    
+    E $\rightarrow$ E0(E1, ..., En) & \makecell[l]{E0.\textit{env} = E.\textit{env} \\ E1.\textit{env} = E.\textit{env} \\ $\vdots$ \\ En.\textit{env} = E.\textit{env} \\ E.\textit{type} = getFunType(E.\textit{env}, E0) \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$existsEnv(E.\textit{env}, E0) \\ \textbf{then} ``function has not been declared'' \\ \textbf{if} $\neg$checkArgTypes(E.\textit{env}, E0, (E1.\textit{type}, ..., En.\textit{type})) \\ \textbf{then} ``error: formal and actual types do not match for \\ function call''} \\
+    
+     & \\
+    
+    E $\rightarrow$ null(T1) & \makecell[l]{E.\textit{type} = T1.\textit{type} \\ E.\textit{isLVal} = false} \\
+    
+     & \\
+    
+    E $\rightarrow$ sizeof(T1) & \makecell[l]{E.\textit{type} = int \\ E.\textit{isLVal} = false} \\
+    
+     & \\
+    
+    E $\rightarrow$ !E1 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) \textbf{then} ``error: can only use \\ integer or pointer types for not''} \\
+    
+     & \\
+    
+    E $\rightarrow$ -E1 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) \textbf{then} ``error: can only use integer \\ types for negation''} \\
+    
+     & \\
+    
+    E $\rightarrow$ +E1 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) \textbf{then} ``error: can only use integer \\ types for positive''} \\
+    
+     & \\
+    
+    E $\rightarrow$ *E1 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ \textbf{let} T = E1.\textit{type} \textbf{in} E.\textit{type} = *T \\ E.\textit{isLVal} = E1.\textit{isLVal} \\ \textbf{if} $\neg$isPointer(E1.\textit{type}) \textbf{then} ``error: can only use pointer \\ types for dereferencing''} \\
+    
+     & \\
+    
+    E $\rightarrow$ $\&$ E1 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E.\textit{isLVal} = false \\ \textbf{let} T = E1.\textit{type} \textbf{in} E.\textit{type} = *T} \\
+    %\\ \textbf{if} $\neg$isPointer(E1.\textit{type}) \textbf{then} ``error: can only use pointer types''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 * E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for \\ multiplication''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 / E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for \\ division''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $\%$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for modulo''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 + E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ \textbf{if} E1.\textit{type} = int \textbf{then} E.\textit{type} = int \\ \textbf{if} E1.\textit{type} = *T \textbf{then} E.\textit{type} = *T \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$(isInt(E1.\textit{type}) $\lor$ isPointer(E1.\textit{type})) \\ \textbf{then} ``error: left side can only be integer or pointer types \\ for addition'' \\ \textbf{if} $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: right side can only be integer type for \\ addition''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 - E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ \textbf{if} E1.\textit{type} = int \textbf{then} E.\textit{type} = int \\ \textbf{if} E1.\textit{type} = *T \textbf{then} E.\textit{type} = *T \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$(isInt(E1.\textit{type}) $\lor$ isPointer(E1.\textit{type})) \\ \textbf{then} ``error: left side can only be integer or pointer types \\ for subtraction'' \\ \textbf{if} $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: right side can only be integer type for \\ subtraction''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $<$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for comparison''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $>$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for comparison''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $<=$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for comparison''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $>=$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isInt(E1.\textit{type}) $\lor$ $\neg$isInt(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer types for comparison''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $==$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) $\lor$ $\neg$isIntOrPointer(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for \\ comparison'' \\ \textbf{if} $\neg$isEqual(E1.\textit{type}, E2.\textit{type}) \\ \textbf{then} ``error: can only compare the same types''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $!=$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) $\lor$ $\neg$isIntOrPointer(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for \\ comparison'' \\ \textbf{if} $\neg$isEqual(E1.\textit{type}, E2.\textit{type}) \\ \textbf{then} ``error: can only compare the same types''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $\&\&$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) $\lor$ $\neg$isIntOrPointer(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for and''} \\ 
+    % \textbf{if} $\neg$isEqual(E1.\textit{type}, E2.\textit{type}) \\ \textbf{then} ``error: can only do logic with same types''} \\
+    
+     & \\
+    
+    E $\rightarrow$ E1 $||$ E2 & \makecell[l]{E1.\textit{env} = E.\textit{env} \\ E2.\textit{env} = E.\textit{env} \\ E.\textit{type} = int \\ E.\textit{isLVal} = false \\ \textbf{if} $\neg$isIntOrPointer(E1.\textit{type}) $\lor$ $\neg$isIntOrPointer(E2.\textit{type}) \\ \textbf{then} ``error: can only use integer or pointer types for or''} \\
+    % \textbf{if} $\neg$isEqual(E1.\textit{type}, E2.\textit{type}) \\ \textbf{then} ``error: can only do logic with same types''} \\
+    
+     & \\
+    
+    \hline
+\end{longtable}
+\end{center}
+
+\end{document}
